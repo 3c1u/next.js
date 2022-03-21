@@ -482,6 +482,7 @@ export type CompletePrivateRouteInfo = {
   props?: Record<string, any>
   err?: Error
   error?: any
+  propsPromise?: Promise<Record<string, any>>
 }
 
 export type AppProps = Pick<CompletePrivateRouteInfo, 'Component' | 'err'> & {
@@ -1361,6 +1362,13 @@ export default class Router implements BaseRouter {
         else throw e
       })
 
+      routeInfo.propsPromise?.then((resolvedProps) =>
+        this._handleDeferredPropsChange({
+          ...routeInfo,
+          props: resolvedProps,
+        })
+      )
+
       if (error) {
         Router.events.emit('routeChangeError', error, cleanedAs, routeProps)
         throw error
@@ -1380,6 +1388,14 @@ export default class Router implements BaseRouter {
       }
       throw err
     }
+  }
+
+  _handleDeferredPropsChange(routeInfo: PrivateRouteInfo) {
+    return this.sub(
+      routeInfo,
+      this.components['/_app'].Component as AppComponent,
+      null
+    )
   }
 
   changeState(
@@ -1556,7 +1572,9 @@ export default class Router implements BaseRouter {
         })
       }
 
-      const props = await this._getData<CompletePrivateRouteInfo>(() =>
+      const hasSkeleton = 'skeleton' in Component
+
+      const propsPromise = this._getData<CompletePrivateRouteInfo>(() =>
         __N_SSG || __N_SSP
           ? fetchNextData(
               dataHref!,
@@ -1578,6 +1596,15 @@ export default class Router implements BaseRouter {
               } as any
             )
       )
+      const props = hasSkeleton
+        ? {
+            pageProps: {},
+          }
+        : await propsPromise
+
+      if (hasSkeleton) {
+        routeInfo.propsPromise = propsPromise
+      }
 
       if (__N_RSC) {
         const { fresh, data } = (await this._getData(() =>
